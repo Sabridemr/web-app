@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>QR Yoklama</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+    }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Tarama çerçevesi */
+    #overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 220px;
+      height: 220px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 16px;
+    }
+
+    /* Köşe çizgileri */
+    #overlay::before, #overlay::after {
+      content: '';
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-color: #fff;
+      border-style: solid;
+    }
+    #overlay::before {
+      top: -2px; left: -2px;
+      border-width: 3px 0 0 3px;
+      border-radius: 14px 0 0 0;
+    }
+    #overlay::after {
+      bottom: -2px; right: -2px;
+      border-width: 0 3px 3px 0;
+      border-radius: 0 0 14px 0;
+    }
+
+    .corner {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-color: #fff;
+      border-style: solid;
+    }
+    .corner.tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 14px 0 0; }
+    .corner.bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 14px; }
+
+    /* Tarama çizgisi animasyonu */
+    #scan-line {
+      position: absolute;
+      top: 0;
+      left: 4px;
+      right: 4px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #4fc3f7, transparent);
+      animation: scan 2s linear infinite;
+      border-radius: 2px;
+    }
+    @keyframes scan {
+      0%   { top: 10px; opacity: 1; }
+      90%  { top: 200px; opacity: 1; }
+      100% { top: 10px; opacity: 0; }
+    }
+
+    #status {
+      position: absolute;
+      bottom: 80px;
+      left: 0; right: 0;
+      text-align: center;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+      padding: 0 20px;
+    }
+
+    #title {
+      position: absolute;
+      top: 50px;
+      left: 0; right: 0;
+      text-align: center;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 600;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+
+    /* Başarı ekranı */
+    #success {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+    #success.show { display: flex; }
+
+    .checkmark {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: #4caf50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+    }
+
+    #success p {
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    #success small {
+      color: rgba(255,255,255,0.6);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="container">
+  <video id="video" autoplay playsinline muted></video>
+
+  <div id="title">QR Kodu Tara</div>
+
+  <div id="overlay">
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div id="scan-line"></div>
+  </div>
+
+  <div id="status">QR kodu çerçeve içine al</div>
+
+  <div id="success">
+    <div class="checkmark">✓</div>
+    <p>QR Okundu!</p>
+    <small>Yoklama gönderiliyor...</small>
+  </div>
+</div>
+
+<canvas id="canvas" style="display:none"></canvas>
+
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.expand();
+  tg.disableClosingConfirmation();
+
+  const video   = document.getElementById('video');
+  const canvas  = document.getElementById('canvas');
+  const status  = document.getElementById('status');
+  const success = document.getElementById('success');
+  const ctx     = canvas.getContext('2d');
+
+  let scanning  = true;
+
+  // Kamerayı başlat (arka kamera öncelikli)
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' } }
+  })
+  .then(stream => {
+    video.srcObject = stream;
+    video.play();
+    requestAnimationFrame(taraFrame);
+  })
+  .catch(err => {
+    status.textContent = '⚠️ Kamera izni verilmedi.';
+    console.error(err);
+  });
+
+  function taraFrame() {
+    if (!scanning) return;
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert'
+      });
+
+      if (code && code.data) {
+        scanning = false;
+        success.classList.add('show');
+
+        // Kamerayı durdur
+        video.srcObject.getTracks().forEach(t => t.stop());
+
+        // Bota gönder ve kapat
+        setTimeout(() => {
+          tg.sendData(code.data);
+        }, 800);
+        return;
+      }
+    }
+
+    requestAnimationFrame(taraFrame);
+  }
+</script>
+
+</body>
+</html>
