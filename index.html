@@ -11,10 +11,6 @@
 
     body {
       background: #000;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
       height: 100vh;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
@@ -31,16 +27,29 @@
       object-fit: cover;
     }
 
+    /* Köşe çerçevesi — sadece köşeler, ortası tamamen açık */
+    .corner {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      border-color: #fff;
+      border-style: solid;
+      opacity: 0.9;
+    }
+    .corner.tl { top: 30%;  left: 10%;  border-width: 3px 0 0 3px; border-radius: 6px 0 0 0; }
+    .corner.tr { top: 30%;  right: 10%; border-width: 3px 3px 0 0; border-radius: 0 6px 0 0; }
+    .corner.bl { bottom: 30%; left: 10%;  border-width: 0 0 3px 3px; border-radius: 0 0 0 6px; }
+    .corner.br { bottom: 30%; right: 10%; border-width: 0 3px 3px 0; border-radius: 0 0 6px 0; }
 
     #status {
       position: absolute;
-      bottom: 80px;
+      bottom: 22%;
       left: 0; right: 0;
       text-align: center;
       color: #fff;
       font-size: 14px;
       font-weight: 500;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
       padding: 0 20px;
     }
 
@@ -52,7 +61,7 @@
       color: #fff;
       font-size: 18px;
       font-weight: 600;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
     }
 
     /* Başarı ekranı */
@@ -97,7 +106,13 @@
 
   <div id="title">QR Kodu Tara</div>
 
-  <div id="status">Kamerayı QR koda tut</div>
+  <!-- Köşe çerçevesi -->
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+
+  <div id="status">Kamerayı QR koda tut — yakınlaştırmak için sıkıştır</div>
 
   <div id="success">
     <div class="checkmark">✓</div>
@@ -119,11 +134,15 @@
   const success = document.getElementById('success');
   const ctx     = canvas.getContext('2d');
 
-  let scanning  = true;
+  let scanning = true;
 
-  // Kamerayı başlat (arka kamera öncelikli)
+  // En yüksek kalitede arka kamera
   navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' } }
+    video: {
+      facingMode: { ideal: 'environment' },
+      width:  { ideal: 3840 },
+      height: { ideal: 2160 }
+    }
   })
   .then(stream => {
     video.srcObject = stream;
@@ -152,10 +171,8 @@
         scanning = false;
         success.classList.add('show');
 
-        // Kamerayı durdur
         video.srcObject.getTracks().forEach(t => t.stop());
 
-        // Bota gönder ve kapat
         setTimeout(() => {
           tg.sendData(code.data);
         }, 800);
