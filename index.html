@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>QR Yoklama</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -12,7 +12,9 @@
     body {
       background: #000;
       height: 100vh;
+      overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      touch-action: none;
     }
 
     #container {
@@ -27,53 +29,137 @@
       object-fit: cover;
     }
 
-    /* Köşe çerçevesi — sadece köşeler, ortası tamamen açık */
+    /* Karanlık overlay — frame dışı */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* Tarama çerçevesi */
+    #frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    /* Animasyonlu tarama çizgisi */
+    #scan-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #4fc3f7, #00e5ff, #4fc3f7, transparent);
+      animation: scan 2s linear infinite;
+      box-shadow: 0 0 8px #00e5ff;
+    }
+    @keyframes scan {
+      0%   { top: 0%; }
+      100% { top: 100%; }
+    }
+
+    /* Köşe köşe çerçevesi */
     .corner {
       position: absolute;
-      width: 44px;
-      height: 44px;
-      border-color: #fff;
+      width: 28px;
+      height: 28px;
+      border-color: #00e5ff;
       border-style: solid;
-      opacity: 0.9;
+      z-index: 2;
     }
-    .corner.tl { top: 30%;  left: 10%;  border-width: 3px 0 0 3px; border-radius: 6px 0 0 0; }
-    .corner.tr { top: 30%;  right: 10%; border-width: 3px 3px 0 0; border-radius: 0 6px 0 0; }
-    .corner.bl { bottom: 30%; left: 10%;  border-width: 0 0 3px 3px; border-radius: 0 0 0 6px; }
-    .corner.br { bottom: 30%; right: 10%; border-width: 0 3px 3px 0; border-radius: 0 0 6px 0; }
-
-    #status {
-      position: absolute;
-      bottom: 22%;
-      left: 0; right: 0;
-      text-align: center;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 500;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
-      padding: 0 20px;
-    }
+    .corner.tl { top: -1px;  left: -1px;  border-width: 3px 0 0 3px; border-radius: 8px 0 0 0; }
+    .corner.tr { top: -1px;  right: -1px; border-width: 3px 3px 0 0; border-radius: 0 8px 0 0; }
+    .corner.bl { bottom: -1px; left: -1px;  border-width: 0 0 3px 3px; border-radius: 0 0 0 8px; }
+    .corner.br { bottom: -1px; right: -1px; border-width: 0 3px 3px 0; border-radius: 0 0 8px 0; }
 
     #title {
       position: absolute;
-      top: 50px;
+      top: 48px;
       left: 0; right: 0;
       text-align: center;
       color: #fff;
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 600;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+      text-shadow: 0 1px 6px rgba(0,0,0,0.9);
+      letter-spacing: 0.3px;
     }
+
+    #status {
+      position: absolute;
+      left: 0; right: 0;
+      text-align: center;
+      color: rgba(255,255,255,0.85);
+      font-size: 13px;
+      font-weight: 400;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+      padding: 0 24px;
+    }
+
+    /* Zoom slider */
+    #zoom-wrap {
+      position: absolute;
+      bottom: 48px;
+      left: 24px; right: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #zoom-wrap span {
+      color: rgba(255,255,255,0.7);
+      font-size: 11px;
+      min-width: 20px;
+      text-align: center;
+    }
+    #zoom-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.25);
+      outline: none;
+    }
+    #zoom-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #00e5ff;
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(0,229,255,0.6);
+    }
+
+    /* Fener butonu */
+    #torch-btn {
+      position: absolute;
+      top: 48px;
+      right: 20px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      border: none;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      display: none;
+    }
+    #torch-btn.on { background: rgba(255,220,0,0.35); }
 
     /* Başarı ekranı */
     #success {
       display: none;
       position: absolute;
       inset: 0;
-      background: rgba(0,0,0,0.85);
+      background: rgba(0,0,0,0.88);
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 16px;
+      gap: 14px;
     }
     #success.show { display: flex; }
 
@@ -86,17 +172,14 @@
       align-items: center;
       justify-content: center;
       font-size: 36px;
+      animation: pop 0.3s ease;
     }
-
-    #success p {
-      color: #fff;
-      font-size: 16px;
-      font-weight: 600;
+    @keyframes pop {
+      0%   { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1);   opacity: 1; }
     }
-    #success small {
-      color: rgba(255,255,255,0.6);
-      font-size: 13px;
-    }
+    #success p     { color: #fff; font-size: 16px; font-weight: 600; }
+    #success small { color: rgba(255,255,255,0.55); font-size: 13px; }
   </style>
 </head>
 <body>
@@ -104,15 +187,27 @@
 <div id="container">
   <video id="video" autoplay playsinline muted></video>
 
+  <!-- Karanlık overlay (SVG ile delik bırakıyoruz) -->
+  <canvas id="overlay-canvas" style="position:absolute;inset:0;pointer-events:none;"></canvas>
+
+  <!-- Tarama çerçevesi -->
+  <div id="frame">
+    <div id="scan-line"></div>
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+  </div>
+
   <div id="title">QR Kodu Tara</div>
+  <button id="torch-btn">🔦</button>
+  <div id="status">QR kodu çerçeve içine al</div>
 
-  <!-- Köşe çerçevesi -->
-  <div class="corner tl"></div>
-  <div class="corner tr"></div>
-  <div class="corner bl"></div>
-  <div class="corner br"></div>
-
-  <div id="status">Kamerayı QR koda tut — yakınlaştırmak için sıkıştır</div>
+  <div id="zoom-wrap">
+    <span>1×</span>
+    <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" />
+    <span id="zoom-val">1×</span>
+  </div>
 
   <div id="success">
     <div class="checkmark">✓</div>
@@ -128,15 +223,63 @@
   tg.expand();
   tg.disableClosingConfirmation();
 
-  const video   = document.getElementById('video');
-  const canvas  = document.getElementById('canvas');
-  const status  = document.getElementById('status');
-  const success = document.getElementById('success');
-  const ctx     = canvas.getContext('2d');
+  const video         = document.getElementById('video');
+  const canvas        = document.getElementById('canvas');
+  const overlayCanvas = document.getElementById('overlay-canvas');
+  const statusEl      = document.getElementById('status');
+  const successEl     = document.getElementById('success');
+  const frameEl       = document.getElementById('frame');
+  const zoomSlider    = document.getElementById('zoom-slider');
+  const zoomVal       = document.getElementById('zoom-val');
+  const torchBtn      = document.getElementById('torch-btn');
+  const ctx           = canvas.getContext('2d');
+  const overlayCtx    = overlayCanvas.getContext('2d');
 
-  let scanning = true;
+  let scanning    = true;
+  let videoTrack  = null;
+  let torchOn     = false;
+  let cssZoom     = 1;
+  let hwZoomMin   = 1;
+  let hwZoomMax   = 1;
+  let hwZoom      = false;
+  let frameSize   = 0;
+  let frameX      = 0;
+  let frameY      = 0;
 
-  // En yüksek kalitede arka kamera
+  // Çerçeve boyutu hesapla ve yerleştir
+  function setupFrame() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    frameSize = Math.round(Math.min(vw, vh) * 0.68);
+    frameEl.style.width  = frameSize + 'px';
+    frameEl.style.height = frameSize + 'px';
+    frameX = Math.round((vw - frameSize) / 2);
+    frameY = Math.round((vh - frameSize) / 2);
+
+    // Durum metnini frame'in altına yerleştir
+    statusEl.style.top = (frameY + frameSize + 18) + 'px';
+
+    // Overlay canvas boyutu
+    overlayCanvas.width  = vw;
+    overlayCanvas.height = vh;
+    drawOverlay();
+  }
+
+  // Frame dışını karart
+  function drawOverlay() {
+    const vw = overlayCanvas.width;
+    const vh = overlayCanvas.height;
+    overlayCtx.clearRect(0, 0, vw, vh);
+    overlayCtx.fillStyle = 'rgba(0,0,0,0.55)';
+    overlayCtx.fillRect(0, 0, vw, vh);
+    // Frame alanını şeffaf bırak
+    overlayCtx.clearRect(frameX, frameY, frameSize, frameSize);
+  }
+
+  window.addEventListener('resize', setupFrame);
+  setupFrame();
+
+  // Kamerayı başlat
   navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: { ideal: 'environment' },
@@ -146,36 +289,90 @@
   })
   .then(stream => {
     video.srcObject = stream;
-    video.play();
-    requestAnimationFrame(taraFrame);
+    videoTrack = stream.getVideoTracks()[0];
+
+    // Hardware zoom kontrolü
+    const caps = videoTrack.getCapabilities();
+    if (caps.zoom) {
+      hwZoom    = true;
+      hwZoomMin = caps.zoom.min;
+      hwZoomMax = Math.min(caps.zoom.max, 8);
+      zoomSlider.min   = hwZoomMin;
+      zoomSlider.max   = hwZoomMax;
+      zoomSlider.value = hwZoomMin;
+      zoomSlider.step  = 0.1;
+    }
+
+    // Fener kontrolü
+    if (caps.torch) {
+      torchBtn.style.display = 'flex';
+    }
+
+    video.play().then(() => requestAnimationFrame(taraFrame));
   })
-  .catch(err => {
-    status.textContent = '⚠️ Kamera izni verilmedi.';
-    console.error(err);
+  .catch(() => {
+    statusEl.textContent = '⚠️ Kamera izni verilmedi.';
   });
 
+  // Zoom slider
+  zoomSlider.addEventListener('input', () => {
+    const val = parseFloat(zoomSlider.value);
+    zoomVal.textContent = val.toFixed(1) + '×';
+
+    if (hwZoom && videoTrack) {
+      videoTrack.applyConstraints({ advanced: [{ zoom: val }] }).catch(() => {
+        // Hardware zoom başarısız → CSS zoom'a geç
+        cssZoom = val;
+        video.style.transform = `scale(${cssZoom})`;
+      });
+    } else {
+      cssZoom = val;
+      video.style.transform       = `scale(${cssZoom})`;
+      video.style.transformOrigin = 'center center';
+    }
+  });
+
+  // Fener
+  torchBtn.addEventListener('click', () => {
+    torchOn = !torchOn;
+    torchBtn.classList.toggle('on', torchOn);
+    torchBtn.textContent = torchOn ? '💡' : '🔦';
+    if (videoTrack) {
+      videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(() => {});
+    }
+  });
+
+  // QR tarama döngüsü
   function taraFrame() {
     if (!scanning) return;
 
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
 
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert'
+      // Sadece frame bölgesine karşılık gelen crop'u tara
+      const scaleX = vw / window.innerWidth;
+      const scaleY = vh / window.innerHeight;
+
+      const cropX = Math.round(frameX * scaleX);
+      const cropY = Math.round(frameY * scaleY);
+      const cropW = Math.round(frameSize * scaleX);
+      const cropH = Math.round(frameSize * scaleY);
+
+      canvas.width  = cropW;
+      canvas.height = cropH;
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      const imageData = ctx.getImageData(0, 0, cropW, cropH);
+      const code = jsQR(imageData.data, cropW, cropH, {
+        inversionAttempts: 'attemptBoth'
       });
 
       if (code && code.data) {
         scanning = false;
-        success.classList.add('show');
-
-        video.srcObject.getTracks().forEach(t => t.stop());
-
-        setTimeout(() => {
-          tg.sendData(code.data);
-        }, 800);
+        successEl.classList.add('show');
+        if (videoTrack) videoTrack.stop();
+        setTimeout(() => tg.sendData(code.data), 700);
         return;
       }
     }
