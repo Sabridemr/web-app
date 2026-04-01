@@ -266,24 +266,22 @@
   setupFrame();
 
   // ── Zoom uygula ────────────────────────────────────────────
-  function applyZoom(z) {
+  // pinchActive=true iken sadece currentZoom güncellenir (canvas crop → kasmasız)
+  // Pinch bitince hardware zoom tek seferinde uygulanır
+  let pinchActive = false;
+
+  function applyZoom(z, fromPinchEnd) {
     const zMin = hwZoomSupport ? hwZoomMin : 1.0;
     const zMax = hwZoomSupport ? hwZoomMax : 5.0;
     z = Math.max(zMin, Math.min(zMax, z));
     currentZoom = z;
 
-    if (hwZoomSupport && videoTrack) {
-      // Throttle: pinch sırasında queue dolmasın, sadece son değeri gönder
-      hwZoomPending = z;
-      if (!hwZoomThrottle) {
-        hwZoomThrottle = setTimeout(() => {
-          if (hwZoomPending !== null && videoTrack) {
-            videoTrack.applyConstraints({ advanced: [{ zoom: hwZoomPending }] }).catch(() => {});
-            hwZoomPending = null;
-          }
-          hwZoomThrottle = null;
-        }, 120);
-      }
+    // Hardware zoom: pinch sırasında ASLA çağırma, sadece gesture bitince
+    if (hwZoomSupport && videoTrack && (!pinchActive || fromPinchEnd)) {
+      clearTimeout(hwZoomThrottle);
+      hwZoomThrottle = setTimeout(() => {
+        if (videoTrack) videoTrack.applyConstraints({ advanced: [{ zoom: currentZoom }] }).catch(() => {});
+      }, fromPinchEnd ? 0 : 120);
     }
 
     zoomIndicator.textContent = z.toFixed(1) + '×';
@@ -304,25 +302,32 @@
 
   document.addEventListener('touchstart', e => {
     if (e.touches.length === 2) {
-      pinchDist0 = touchDist(e.touches[0], e.touches[1]);
-      pinchZoom0 = currentZoom;
+      pinchDist0  = touchDist(e.touches[0], e.touches[1]);
+      pinchZoom0  = currentZoom;
+      pinchActive = true;
       e.preventDefault();
     }
   }, { passive: false });
 
   document.addEventListener('touchmove', e => {
     if (e.touches.length === 2 && pinchDist0 !== null) {
-      const ratio  = touchDist(e.touches[0], e.touches[1]) / pinchDist0;
-      const zMin   = hwZoomSupport ? hwZoomMin : 1.0;
-      const zMax   = hwZoomSupport ? hwZoomMax : 5.0;
+      const ratio   = touchDist(e.touches[0], e.touches[1]) / pinchDist0;
+      const zMin    = hwZoomSupport ? hwZoomMin : 1.0;
+      const zMax    = hwZoomSupport ? hwZoomMax : 5.0;
       const newZoom = Math.max(zMin, Math.min(zMax, pinchZoom0 * ratio));
-      if (Math.abs(newZoom - currentZoom) >= 0.01) applyZoom(newZoom);
+      // Pinch sırasında sadece currentZoom + gösterge güncellenir, hw zoom yok
+      if (Math.abs(newZoom - currentZoom) >= 0.01) applyZoom(newZoom, false);
       e.preventDefault();
     }
   }, { passive: false });
 
   document.addEventListener('touchend', e => {
-    if (e.touches.length < 2) pinchDist0 = null;
+    if (e.touches.length < 2 && pinchActive) {
+      pinchActive = false;
+      pinchDist0  = null;
+      // Gesture bitti — şimdi hardware zoom'u uygula
+      applyZoom(currentZoom, true);
+    }
   }, { passive: true });
 
   // ── Kamerayı başlat ───────────────────────────────────────
@@ -414,18 +419,21 @@
     const sh = display.height;
 
     // ── Ekrana çiz (zoom ile) ──────────────────────────────
-    // hardware zoom zaten video stream'ini etkiler,
-    // Software zoom: renderZoom, currentZoom'a lerp ile yaklaşır (smooth)
-    if (!hwZoomSupport) {
-      renderZoom += (currentZoom - renderZoom) * 0.18;
+    // Pinch aktifken: canvas crop (hw zoom yok, anlık, kasmasız)
+    // Pinch bitti:    hw zoom stream'e uygulandı, canvas 1:1
+    if (!hwZoomSupport || pinchActive) {
+      // Software zoom — lerp ile smooth
+      renderZoom += (currentZoom - renderZoom) * 0.2;
       if (Math.abs(renderZoom - currentZoom) < 0.005) renderZoom = currentZoom;
     } else {
-      renderZoom = 1.0; // hw zoom stream'de uygulandı, canvas'ta 1:1
+      // Hardware zoom aktif, stream zaten crop edilmiş
+      renderZoom += (1.0 - renderZoom) * 0.2;
+      if (Math.abs(renderZoom - 1.0) < 0.005) renderZoom = 1.0;
     }
 
     const { srcX, srcY, srcW, srcH } = coverSrc(sw, sh, vw, vh);
 
-    const Z       = hwZoomSupport ? 1.0 : renderZoom;
+    const Z       = renderZoom;
     const zSrcW   = srcW / Z;
     const zSrcH   = srcH / Z;
     const zSrcX   = srcX + (srcW - zSrcW) / 2;
