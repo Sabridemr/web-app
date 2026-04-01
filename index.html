@@ -204,9 +204,12 @@
   const frameEl       = document.getElementById('frame');
   const torchBtn      = document.getElementById('torch-btn');
   const zoomIndicator = document.getElementById('zoom-indicator');
-  const dCtx          = display.getContext('2d');     // ekranda gösterilen
-  const ctx           = canvas.getContext('2d');       // QR tarama
+  const dCtx          = display.getContext('2d');                          // ekranda gösterilen
+  const ctx           = canvas.getContext('2d', { willReadFrequently: true }); // QR tarama
   const overlayCtx    = overlayCanvas.getContext('2d');
+
+  dCtx.imageSmoothingEnabled = true;
+  dCtx.imageSmoothingQuality = 'high';
 
   let scanning      = true;
   let videoTrack    = null;
@@ -229,6 +232,9 @@
     display.height       = sh;
     overlayCanvas.width  = sw;
     overlayCanvas.height = sh;
+
+    dCtx.imageSmoothingEnabled = true;
+    dCtx.imageSmoothingQuality = 'high';
 
     frameSize = Math.round(Math.min(sw, sh) * 0.68);
     frameEl.style.width  = frameSize + 'px';
@@ -288,9 +294,8 @@
       const ratio  = touchDist(e.touches[0], e.touches[1]) / pinchDist0;
       const zMin   = hwZoomSupport ? hwZoomMin : 1.0;
       const zMax   = hwZoomSupport ? hwZoomMax : 5.0;
-      let newZoom  = Math.max(zMin, Math.min(zMax, pinchZoom0 * ratio));
-      newZoom      = Math.round(newZoom / 0.05) * 0.05;
-      if (Math.abs(newZoom - currentZoom) >= 0.05) applyZoom(newZoom);
+      const newZoom = Math.max(zMin, Math.min(zMax, pinchZoom0 * ratio));
+      if (Math.abs(newZoom - currentZoom) >= 0.01) applyZoom(newZoom);
       e.preventDefault();
     }
   }, { passive: false });
@@ -363,8 +368,10 @@
     return { srcX, srcY, srcW, srcH };
   }
 
-  let lastScan = 0;
+  let lastScan  = 0;
   const SCAN_MS = 80;
+  let lastCropW = 0;
+  let lastCropH = 0;
 
   function loop(ts) {
     if (!scanning) return;
@@ -407,8 +414,13 @@
 
     if (cropW <= 0 || cropH <= 0) return;
 
-    canvas.width  = cropW;
-    canvas.height = cropH;
+    // Boyut değiştiğinde canvas'ı sıfırla (her seferinde değil — pahalı işlem)
+    if (cropW !== lastCropW || cropH !== lastCropH) {
+      canvas.width  = cropW;
+      canvas.height = cropH;
+      lastCropW = cropW;
+      lastCropH = cropH;
+    }
     ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
     const img  = ctx.getImageData(0, 0, cropW, cropH);
