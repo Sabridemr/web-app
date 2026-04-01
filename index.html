@@ -212,11 +212,7 @@
   let frameX        = 0;
   let frameY        = 0;
   let currentZoom   = 1.0;
-  let hwZoomMin     = 1.0;
-  let hwZoomMax     = 1.0;
-  let hwZoomSupport = false;
   let zoomHideTimer = null;
-  let hwZoomTimer   = null;
 
   // ── Overlay kurulumu (sadece resize'da çizilir, her frame'de değil) ──
   function setupFrame() {
@@ -241,13 +237,12 @@
   window.addEventListener('resize', setupFrame);
   setupFrame();
 
-  // ── Zoom: CSS transform (GPU, anlık, kasmasız) ────────────────
+  // ── Zoom: sadece CSS transform — kameraya hiç dokunma ────────
   let pinchActive = false;
+  const ZOOM_MAX = 5.0;
 
   function setZoom(z) {
-    const zMin = hwZoomSupport ? hwZoomMin : 1.0;
-    const zMax = hwZoomSupport ? hwZoomMax : 5.0;
-    z = Math.max(zMin, Math.min(zMax, z));
+    z = Math.max(1.0, Math.min(ZOOM_MAX, z));
     currentZoom = z;
     video.style.transform = `scale(${z})`;
 
@@ -255,15 +250,6 @@
     zoomIndicator.classList.add('show');
     clearTimeout(zoomHideTimer);
     zoomHideTimer = setTimeout(() => zoomIndicator.classList.remove('show'), 1500);
-  }
-
-  function applyHwZoom() {
-    if (hwZoomSupport && videoTrack) {
-      clearTimeout(hwZoomTimer);
-      hwZoomTimer = setTimeout(() => {
-        videoTrack.applyConstraints({ advanced: [{ zoom: currentZoom }] }).catch(() => {});
-      }, 50);
-    }
   }
 
   // ── Pinch-to-zoom ─────────────────────────────────────────────
@@ -285,20 +271,17 @@
 
   document.addEventListener('touchmove', e => {
     if (e.touches.length === 2 && pinchDist0 !== null) {
-      const zMin    = hwZoomSupport ? hwZoomMin : 1.0;
-      const zMax    = hwZoomSupport ? hwZoomMax : 5.0;
       const ratio   = touchDist(e.touches[0], e.touches[1]) / pinchDist0;
-      const newZoom = Math.max(zMin, Math.min(zMax, pinchZoom0 * ratio));
+      const newZoom = Math.max(1.0, Math.min(ZOOM_MAX, pinchZoom0 * ratio));
       if (Math.abs(newZoom - currentZoom) >= 0.01) setZoom(newZoom);
       e.preventDefault();
     }
   }, { passive: false });
 
   document.addEventListener('touchend', e => {
-    if (e.touches.length < 2 && pinchActive) {
+    if (e.touches.length < 2) {
       pinchActive = false;
       pinchDist0  = null;
-      applyHwZoom(); // gesture bitti, hw zoom uygula
     }
   }, { passive: true });
 
@@ -325,12 +308,6 @@
     if (caps.exposureMode?.includes('continuous'))     adv.exposureMode     = 'continuous';
     if (caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
     if (Object.keys(adv).length) videoTrack.applyConstraints({ advanced: [adv] }).catch(() => {});
-
-    if (caps.zoom) {
-      hwZoomSupport = true;
-      hwZoomMin     = caps.zoom.min ?? 1.0;
-      hwZoomMax     = caps.zoom.max ?? 6.0;
-    }
 
     if (caps.torch) torchBtn.style.display = 'flex';
 
@@ -371,7 +348,7 @@
     const visY = (vh - visH) / 2;
 
     // CSS zoom ile merkez etrafında crop
-    const Z      = hwZoomSupport ? 1.0 : currentZoom;
+    const Z      = currentZoom;
     const zVisW  = visW / Z;
     const zVisH  = visH / Z;
     const zVisX  = visX + (visW - zVisW) / 2;
