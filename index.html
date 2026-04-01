@@ -101,7 +101,7 @@
       bottom: 40px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.55);
       color: #fff;
       font-size: 13px; font-weight: 600;
       padding: 5px 14px;
@@ -109,8 +109,10 @@
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.3s;
+      white-space: nowrap;
     }
     #zoom-indicator.show { opacity: 1; }
+
 
     /* Fener butonu */
     #torch-btn {
@@ -218,10 +220,15 @@
   let frameX        = 0;
   let frameY        = 0;
   let currentZoom   = 1.0;
+  let renderZoom    = 1.0;   // smooth interpolation için
   let hwZoomMin     = 1.0;
-  let hwZoomMax     = 6.0;
+  let hwZoomMax     = 1.0;
   let hwZoomSupport = false;
   let zoomHideTimer = null;
+
+  // Hardware zoom throttle — applyConstraints queue dolmasın
+  let hwZoomPending  = null;
+  let hwZoomThrottle = null;
 
   // ── Çerçeve + overlay kurulumu ─────────────────────────────
   function setupFrame() {
@@ -260,11 +267,25 @@
 
   // ── Zoom uygula ────────────────────────────────────────────
   function applyZoom(z) {
+    const zMin = hwZoomSupport ? hwZoomMin : 1.0;
+    const zMax = hwZoomSupport ? hwZoomMax : 5.0;
+    z = Math.max(zMin, Math.min(zMax, z));
     currentZoom = z;
+
     if (hwZoomSupport && videoTrack) {
-      videoTrack.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {});
+      // Throttle: pinch sırasında queue dolmasın, sadece son değeri gönder
+      hwZoomPending = z;
+      if (!hwZoomThrottle) {
+        hwZoomThrottle = setTimeout(() => {
+          if (hwZoomPending !== null && videoTrack) {
+            videoTrack.applyConstraints({ advanced: [{ zoom: hwZoomPending }] }).catch(() => {});
+            hwZoomPending = null;
+          }
+          hwZoomThrottle = null;
+        }, 120);
+      }
     }
-    // Gösterge
+
     zoomIndicator.textContent = z.toFixed(1) + '×';
     zoomIndicator.classList.add('show');
     clearTimeout(zoomHideTimer);
@@ -305,11 +326,12 @@
   }, { passive: true });
 
   // ── Kamerayı başlat ───────────────────────────────────────
+  // QR için 1280×720 ideal: daha yüksek çözünürlük gereksiz yük oluşturur
   navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: { exact: 'environment' },
-      width:      { ideal: 1920 },
-      height:     { ideal: 1080 },
+      width:      { ideal: 1280, max: 1920 },
+      height:     { ideal: 720,  max: 1080 },
       frameRate:  { ideal: 30, max: 30 }
     }
   })
@@ -333,11 +355,17 @@
     if (caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
     if (Object.keys(adv).length) videoTrack.applyConstraints({ advanced: [adv] }).catch(() => {});
 
-    // Hardware zoom
+    // Hardware zoom — cihazın gerçek min/max değerlerini al
     if (caps.zoom) {
       hwZoomSupport = true;
-      hwZoomMin     = caps.zoom.min ?? 1;
-      hwZoomMax     = Math.min(caps.zoom.max ?? 6, 6);
+      hwZoomMin     = caps.zoom.min ?? 1.0;
+      hwZoomMax     = caps.zoom.max ?? 6.0;
+      currentZoom   = hwZoomMin;
+      renderZoom    = hwZoomMin;
+
+      // max butonu label'ını gerçek değere güncelle
+      const maxBtn = document.querySelector('.zoom-btn[data-zoom="0"]');
+      if (maxBtn) maxBtn.textContent = hwZoomMax >= 10 ? '10×' : (hwZoomMax + '×');
     }
 
     // Fener
@@ -387,11 +415,17 @@
 
     // ── Ekrana çiz (zoom ile) ──────────────────────────────
     // hardware zoom zaten video stream'ini etkiler,
-    // CSS zoom yok — canvas'a her zaman doğru boyutta çiziyoruz
+    // Software zoom: renderZoom, currentZoom'a lerp ile yaklaşır (smooth)
+    if (!hwZoomSupport) {
+      renderZoom += (currentZoom - renderZoom) * 0.18;
+      if (Math.abs(renderZoom - currentZoom) < 0.005) renderZoom = currentZoom;
+    } else {
+      renderZoom = 1.0; // hw zoom stream'de uygulandı, canvas'ta 1:1
+    }
+
     const { srcX, srcY, srcW, srcH } = coverSrc(sw, sh, vw, vh);
 
-    // Zoom varsa, cover alanının merkezini Z'ye bölerek küçültürüz
-    const Z       = hwZoomSupport ? 1.0 : currentZoom; // hw zoom → stream'de, css zoom → canvas'ta
+    const Z       = hwZoomSupport ? 1.0 : renderZoom;
     const zSrcW   = srcW / Z;
     const zSrcH   = srcH / Z;
     const zSrcX   = srcX + (srcW - zSrcW) / 2;
