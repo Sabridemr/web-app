@@ -23,12 +23,15 @@
       height: 100vh;
     }
 
-    /* Kamera görüntüsü canvas olarak gösterilir — video gizli */
-    #display {
+    /* Video direkt gösteriliyor — canvas render loop yok */
+    #video {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
+      object-fit: cover;
+      transform-origin: center center;
+      will-change: transform;
     }
 
     #overlay-canvas {
@@ -95,7 +98,6 @@
       pointer-events: none;
     }
 
-    /* Zoom göstergesi */
     #zoom-indicator {
       position: absolute;
       bottom: 40px;
@@ -113,8 +115,6 @@
     }
     #zoom-indicator.show { opacity: 1; }
 
-
-    /* Fener butonu */
     #torch-btn {
       position: absolute;
       top: 48px; right: 20px;
@@ -130,7 +130,6 @@
     }
     #torch-btn.on { background: rgba(255,220,0,0.35); }
 
-    /* Başarı ekranı */
     #success {
       display: none;
       position: absolute;
@@ -164,8 +163,7 @@
 <body>
 
 <div id="container">
-  <!-- Kamera görüntüsü buraya çizilir, sabit frame -->
-  <canvas id="display"></canvas>
+  <video id="video" autoplay playsinline muted></video>
   <canvas id="overlay-canvas"></canvas>
 
   <div id="frame">
@@ -188,8 +186,7 @@
   </div>
 </div>
 
-<!-- Gizli video + QR tarama için gizli canvas -->
-<video id="video" autoplay playsinline muted style="display:none"></video>
+<!-- Sadece QR tarama için gizli canvas -->
 <canvas id="canvas" style="display:none"></canvas>
 
 <script>
@@ -198,7 +195,6 @@
   tg.disableClosingConfirmation();
 
   const video         = document.getElementById('video');
-  const display       = document.getElementById('display');
   const canvas        = document.getElementById('canvas');
   const overlayCanvas = document.getElementById('overlay-canvas');
   const statusEl      = document.getElementById('status');
@@ -206,12 +202,8 @@
   const frameEl       = document.getElementById('frame');
   const torchBtn      = document.getElementById('torch-btn');
   const zoomIndicator = document.getElementById('zoom-indicator');
-  const dCtx          = display.getContext('2d');                          // ekranda gösterilen
-  const ctx           = canvas.getContext('2d', { willReadFrequently: true }); // QR tarama
   const overlayCtx    = overlayCanvas.getContext('2d');
-
-  dCtx.imageSmoothingEnabled = true;
-  dCtx.imageSmoothingQuality = 'high';
+  const ctx           = canvas.getContext('2d', { willReadFrequently: true });
 
   let scanning      = true;
   let videoTrack    = null;
@@ -220,28 +212,19 @@
   let frameX        = 0;
   let frameY        = 0;
   let currentZoom   = 1.0;
-  let renderZoom    = 1.0;   // smooth interpolation için
   let hwZoomMin     = 1.0;
   let hwZoomMax     = 1.0;
   let hwZoomSupport = false;
   let zoomHideTimer = null;
+  let hwZoomTimer   = null;
 
-  // Hardware zoom throttle — applyConstraints queue dolmasın
-  let hwZoomPending  = null;
-  let hwZoomThrottle = null;
-
-  // ── Çerçeve + overlay kurulumu ─────────────────────────────
+  // ── Overlay kurulumu (sadece resize'da çizilir, her frame'de değil) ──
   function setupFrame() {
     const sw = window.innerWidth;
     const sh = window.innerHeight;
 
-    display.width        = sw;
-    display.height       = sh;
     overlayCanvas.width  = sw;
     overlayCanvas.height = sh;
-
-    dCtx.imageSmoothingEnabled = true;
-    dCtx.imageSmoothingQuality = 'high';
 
     frameSize = Math.round(Math.min(sw, sh) * 0.68);
     frameEl.style.width  = frameSize + 'px';
@@ -250,13 +233,6 @@
     frameY = Math.round((sh - frameSize) / 2);
     statusEl.style.top = (frameY + frameSize + 18) + 'px';
 
-    drawOverlay();
-  }
-
-  function drawOverlay() {
-    const sw = overlayCanvas.width;
-    const sh = overlayCanvas.height;
-    overlayCtx.clearRect(0, 0, sw, sh);
     overlayCtx.fillStyle = 'rgba(0,0,0,0.55)';
     overlayCtx.fillRect(0, 0, sw, sh);
     overlayCtx.clearRect(frameX, frameY, frameSize, frameSize);
@@ -265,24 +241,15 @@
   window.addEventListener('resize', setupFrame);
   setupFrame();
 
-  // ── Zoom uygula ────────────────────────────────────────────
-  // pinchActive=true iken sadece currentZoom güncellenir (canvas crop → kasmasız)
-  // Pinch bitince hardware zoom tek seferinde uygulanır
+  // ── Zoom: CSS transform (GPU, anlık, kasmasız) ────────────────
   let pinchActive = false;
 
-  function applyZoom(z, fromPinchEnd) {
+  function setZoom(z) {
     const zMin = hwZoomSupport ? hwZoomMin : 1.0;
     const zMax = hwZoomSupport ? hwZoomMax : 5.0;
     z = Math.max(zMin, Math.min(zMax, z));
     currentZoom = z;
-
-    // Hardware zoom: pinch sırasında ASLA çağırma, sadece gesture bitince
-    if (hwZoomSupport && videoTrack && (!pinchActive || fromPinchEnd)) {
-      clearTimeout(hwZoomThrottle);
-      hwZoomThrottle = setTimeout(() => {
-        if (videoTrack) videoTrack.applyConstraints({ advanced: [{ zoom: currentZoom }] }).catch(() => {});
-      }, fromPinchEnd ? 0 : 120);
-    }
+    video.style.transform = `scale(${z})`;
 
     zoomIndicator.textContent = z.toFixed(1) + '×';
     zoomIndicator.classList.add('show');
@@ -290,14 +257,21 @@
     zoomHideTimer = setTimeout(() => zoomIndicator.classList.remove('show'), 1500);
   }
 
-  // ── Pinch-to-zoom ──────────────────────────────────────────
+  function applyHwZoom() {
+    if (hwZoomSupport && videoTrack) {
+      clearTimeout(hwZoomTimer);
+      hwZoomTimer = setTimeout(() => {
+        videoTrack.applyConstraints({ advanced: [{ zoom: currentZoom }] }).catch(() => {});
+      }, 50);
+    }
+  }
+
+  // ── Pinch-to-zoom ─────────────────────────────────────────────
   let pinchDist0 = null;
   let pinchZoom0 = 1.0;
 
   function touchDist(t1, t2) {
-    const dx = t1.clientX - t2.clientX;
-    const dy = t1.clientY - t2.clientY;
-    return Math.hypot(dx, dy);
+    return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
   }
 
   document.addEventListener('touchstart', e => {
@@ -311,12 +285,11 @@
 
   document.addEventListener('touchmove', e => {
     if (e.touches.length === 2 && pinchDist0 !== null) {
-      const ratio   = touchDist(e.touches[0], e.touches[1]) / pinchDist0;
       const zMin    = hwZoomSupport ? hwZoomMin : 1.0;
       const zMax    = hwZoomSupport ? hwZoomMax : 5.0;
+      const ratio   = touchDist(e.touches[0], e.touches[1]) / pinchDist0;
       const newZoom = Math.max(zMin, Math.min(zMax, pinchZoom0 * ratio));
-      // Pinch sırasında sadece currentZoom + gösterge güncellenir, hw zoom yok
-      if (Math.abs(newZoom - currentZoom) >= 0.01) applyZoom(newZoom, false);
+      if (Math.abs(newZoom - currentZoom) >= 0.01) setZoom(newZoom);
       e.preventDefault();
     }
   }, { passive: false });
@@ -325,27 +298,21 @@
     if (e.touches.length < 2 && pinchActive) {
       pinchActive = false;
       pinchDist0  = null;
-      // Gesture bitti — şimdi hardware zoom'u uygula
-      applyZoom(currentZoom, true);
+      applyHwZoom(); // gesture bitti, hw zoom uygula
     }
   }, { passive: true });
 
-  // ── Kamerayı başlat ───────────────────────────────────────
-  // QR için 1280×720 ideal: daha yüksek çözünürlük gereksiz yük oluşturur
+  // ── Kamerayı başlat ──────────────────────────────────────────
   navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: { exact: 'environment' },
-      width:      { ideal: 1280, max: 1920 },
-      height:     { ideal: 720,  max: 1080 },
-      frameRate:  { ideal: 30, max: 30 }
+      width:  { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30, max: 30 }
     }
   })
   .catch(() => navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: { ideal: 'environment' },
-      width:      { ideal: 1280 },
-      height:     { ideal: 720 }
-    }
+    video: { facingMode: { ideal: 'environment' } }
   }))
   .then(stream => {
     video.srcObject = stream;
@@ -353,32 +320,23 @@
 
     const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
 
-    // Sürekli otofokus / pozlama / beyaz denge
     const adv = {};
     if (caps.focusMode?.includes('continuous'))        adv.focusMode        = 'continuous';
     if (caps.exposureMode?.includes('continuous'))     adv.exposureMode     = 'continuous';
     if (caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
     if (Object.keys(adv).length) videoTrack.applyConstraints({ advanced: [adv] }).catch(() => {});
 
-    // Hardware zoom — cihazın gerçek min/max değerlerini al
     if (caps.zoom) {
       hwZoomSupport = true;
       hwZoomMin     = caps.zoom.min ?? 1.0;
       hwZoomMax     = caps.zoom.max ?? 6.0;
-      currentZoom   = hwZoomMin;
-      renderZoom    = hwZoomMin;
-
-      // max butonu label'ını gerçek değere güncelle
-      const maxBtn = document.querySelector('.zoom-btn[data-zoom="0"]');
-      if (maxBtn) maxBtn.textContent = hwZoomMax >= 10 ? '10×' : (hwZoomMax + '×');
     }
 
-    // Fener
     if (caps.torch) torchBtn.style.display = 'flex';
 
     return video.play();
   })
-  .then(() => requestAnimationFrame(loop))
+  .then(() => scanLoop())
   .catch(() => { statusEl.textContent = '⚠️ Kamera izni verilmedi.'; });
 
   // Fener
@@ -389,80 +347,46 @@
     if (videoTrack) videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(() => {});
   });
 
-  // ── Ana döngü ─────────────────────────────────────────────
-  // video buffer → ekran dönüşüm kaynak koordinatları
-  // object-fit:cover eşdeğeri: video merkezini ekrana kaplama
-  function coverSrc(sw, sh, vw, vh) {
-    const S  = Math.max(sw / vw, sh / vh);   // cover ölçeği
-    const srcW = sw / S;
-    const srcH = sh / S;
-    const srcX = (vw - srcW) / 2;
-    const srcY = (vh - srcH) / 2;
-    return { srcX, srcY, srcW, srcH };
-  }
-
-  let lastScan  = 0;
-  const SCAN_MS = 80;
-  let lastCropW = 0;
-  let lastCropH = 0;
-
-  function loop(ts) {
+  // ── QR Tarama döngüsü (setTimeout, rAF yok) ──────────────────
+  function scanLoop() {
     if (!scanning) return;
-    requestAnimationFrame(loop);
+    setTimeout(scanLoop, 150);
 
     if (video.readyState < video.HAVE_ENOUGH_DATA) return;
+
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (!vw || !vh) return;
 
-    const sw = display.width;
-    const sh = display.height;
+    const sw = window.innerWidth;
+    const sh = window.innerHeight;
 
-    // ── Ekrana çiz (zoom ile) ──────────────────────────────
-    // Pinch aktifken: canvas crop (hw zoom yok, anlık, kasmasız)
-    // Pinch bitti:    hw zoom stream'e uygulandı, canvas 1:1
-    if (!hwZoomSupport || pinchActive) {
-      // Software zoom — lerp ile smooth
-      renderZoom += (currentZoom - renderZoom) * 0.2;
-      if (Math.abs(renderZoom - currentZoom) < 0.005) renderZoom = currentZoom;
-    } else {
-      // Hardware zoom aktif, stream zaten crop edilmiş
-      renderZoom += (1.0 - renderZoom) * 0.2;
-      if (Math.abs(renderZoom - 1.0) < 0.005) renderZoom = 1.0;
-    }
+    // Ekrandaki frame kutusunun video koordinatlarına karşılığı
+    // CSS scale ile zoom yapılıyor: currentZoom büyütme oranı
+    // Video cover scale faktörü
+    const S    = Math.max(sw / vw, sh / vh);
+    const visW = sw / S;                       // ekranda görünen video genişliği (px)
+    const visH = sh / S;
+    const visX = (vw - visW) / 2;             // sol kenar video offseti
+    const visY = (vh - visH) / 2;
 
-    const { srcX, srcY, srcW, srcH } = coverSrc(sw, sh, vw, vh);
+    // CSS zoom ile merkez etrafında crop
+    const Z      = hwZoomSupport ? 1.0 : currentZoom;
+    const zVisW  = visW / Z;
+    const zVisH  = visH / Z;
+    const zVisX  = visX + (visW - zVisW) / 2;
+    const zVisY  = visY + (visH - zVisH) / 2;
 
-    const Z       = renderZoom;
-    const zSrcW   = srcW / Z;
-    const zSrcH   = srcH / Z;
-    const zSrcX   = srcX + (srcW - zSrcW) / 2;
-    const zSrcY   = srcY + (srcH - zSrcH) / 2;
-
-    dCtx.drawImage(video, zSrcX, zSrcY, zSrcW, zSrcH, 0, 0, sw, sh);
-
-    // ── QR tarama (her SCAN_MS ms) ────────────────────────
-    if (ts - lastScan < SCAN_MS) return;
-    lastScan = ts;
-
-    // Ekran koordinatı → video buffer koordinatı (zoom hesaplı)
-    // Ekran noktası (sx, sy) → video pikseli:
-    //   vx = zSrcX + (sx / sw) * zSrcW
-    //   vy = zSrcY + (sy / sh) * zSrcH
-    const cropX = Math.round(zSrcX + (frameX / sw) * zSrcW);
-    const cropY = Math.round(zSrcY + (frameY / sh) * zSrcH);
-    const cropW = Math.round((frameSize / sw) * zSrcW);
-    const cropH = Math.round((frameSize / sh) * zSrcH);
+    // Frame kutusunu video koordinatına çevir
+    const cropX = Math.round(zVisX + (frameX / sw) * zVisW);
+    const cropY = Math.round(zVisY + (frameY / sh) * zVisH);
+    const cropW = Math.round((frameSize / sw) * zVisW);
+    const cropH = Math.round((frameSize / sh) * zVisH);
 
     if (cropW <= 0 || cropH <= 0) return;
 
-    // Boyut değiştiğinde canvas'ı sıfırla (her seferinde değil — pahalı işlem)
-    if (cropW !== lastCropW || cropH !== lastCropH) {
-      canvas.width  = cropW;
-      canvas.height = cropH;
-      lastCropW = cropW;
-      lastCropH = cropH;
-    }
+    canvas.width  = cropW;
+    canvas.height = cropH;
     ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
     const img  = ctx.getImageData(0, 0, cropW, cropH);
