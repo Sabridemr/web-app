@@ -241,14 +241,25 @@
   setupFrame();
 
   // ── Zoom ──────────────────────────────────────────────────────
-  let pinchActive = false;
-  const ZOOM_MAX = 5.0;
+  let pinchActive  = false;
+  const ZOOM_MAX   = 5.0;
+  let pendingScale = null;
+  let zoomRafId    = null;
+
+  function flushZoomRaf() {
+    if (pendingScale !== null) {
+      video.style.transform = `scale(${pendingScale})`;
+      pendingScale = null;
+    }
+    zoomRafId = null;
+  }
 
   function setZoom(z) {
     z = Math.max(1.0, Math.min(ZOOM_MAX, z));
-    currentZoom = z;
-    // CSS scale sadece hardware zoom'un karşılayamadığı kısmı büyütür
-    video.style.transform = `scale(${z / appliedHwZoom})`;
+    currentZoom  = z;
+    pendingScale = z / appliedHwZoom;
+    // Transform'u bir sonraki ekran frame'ine ertele — touchmove spam'ini önler
+    if (!zoomRafId) zoomRafId = requestAnimationFrame(flushZoomRaf);
 
     zoomIndicator.textContent = z.toFixed(1) + '×';
     zoomIndicator.classList.add('show');
@@ -294,7 +305,7 @@
     if (e.touches.length === 2 && pinchDist0 !== null) {
       const ratio   = touchDist(e.touches[0], e.touches[1]) / pinchDist0;
       const newZoom = Math.max(1.0, Math.min(ZOOM_MAX, pinchZoom0 * ratio));
-      if (Math.abs(newZoom - currentZoom) >= 0.01) setZoom(newZoom);
+      if (Math.abs(newZoom - currentZoom) >= 0.05) setZoom(newZoom);
       e.preventDefault();
     }
   }, { passive: false });
