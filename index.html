@@ -369,39 +369,12 @@
     const vh = video.videoHeight;
     if (!vw || !vh) return;
 
-    const sw = window.innerWidth;
-    const sh = window.innerHeight;
+    canvas.width  = vw;
+    canvas.height = vh;
+    ctx.drawImage(video, 0, 0, vw, vh);
 
-    // Ekrandaki frame kutusunun video koordinatlarına karşılığı
-    // CSS scale ile zoom yapılıyor: currentZoom büyütme oranı
-    // Video cover scale faktörü
-    const S    = Math.max(sw / vw, sh / vh);
-    const visW = sw / S;                       // ekranda görünen video genişliği (px)
-    const visH = sh / S;
-    const visX = (vw - visW) / 2;             // sol kenar video offseti
-    const visY = (vh - visH) / 2;
-
-    // CSS zoom ile merkez etrafında crop
-    const Z      = currentZoom;
-    const zVisW  = visW / Z;
-    const zVisH  = visH / Z;
-    const zVisX  = visX + (visW - zVisW) / 2;
-    const zVisY  = visY + (visH - zVisH) / 2;
-
-    // Frame kutusunu video koordinatına çevir
-    const cropX = Math.round(zVisX + (frameX / sw) * zVisW);
-    const cropY = Math.round(zVisY + (frameY / sh) * zVisH);
-    const cropW = Math.round((frameSize / sw) * zVisW);
-    const cropH = Math.round((frameSize / sh) * zVisH);
-
-    if (cropW <= 0 || cropH <= 0) return;
-
-    canvas.width  = cropW;
-    canvas.height = cropH;
-    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-    const img  = ctx.getImageData(0, 0, cropW, cropH);
-    const code = jsQR(img.data, cropW, cropH, { inversionAttempts: 'attemptBoth' });
+    const img  = ctx.getImageData(0, 0, vw, vh);
+    const code = jsQR(img.data, vw, vh, { inversionAttempts: 'attemptBoth' });
 
     if (code && code.data) {
       scanning = false;
