@@ -205,14 +205,17 @@
   const overlayCtx    = overlayCanvas.getContext('2d');
   const ctx           = canvas.getContext('2d', { willReadFrequently: true });
 
-  let scanning      = true;
-  let videoTrack    = null;
-  let torchOn       = false;
-  let frameSize     = 0;
-  let frameX        = 0;
-  let frameY        = 0;
-  let currentZoom   = 1.0;
-  let zoomHideTimer = null;
+  let scanning        = true;
+  let videoTrack      = null;
+  let torchOn         = false;
+  let frameSize       = 0;
+  let frameX          = 0;
+  let frameY          = 0;
+  let currentZoom     = 1.0;
+  let appliedHwZoom   = 1.0;
+  let hwZoomSupported = false;
+  let trackCaps       = {};
+  let zoomHideTimer   = null;
 
   // ── Overlay kurulumu (sadece resize'da çizilir, her frame'de değil) ──
   function setupFrame() {
@@ -237,19 +240,37 @@
   window.addEventListener('resize', setupFrame);
   setupFrame();
 
-  // ── Zoom: sadece CSS transform — kameraya hiç dokunma ────────
+  // ── Zoom ──────────────────────────────────────────────────────
   let pinchActive = false;
   const ZOOM_MAX = 5.0;
 
   function setZoom(z) {
     z = Math.max(1.0, Math.min(ZOOM_MAX, z));
     currentZoom = z;
-    video.style.transform = `scale(${z})`;
+    // CSS scale sadece hardware zoom'un karşılayamadığı kısmı büyütür
+    video.style.transform = `scale(${z / appliedHwZoom})`;
 
     zoomIndicator.textContent = z.toFixed(1) + '×';
     zoomIndicator.classList.add('show');
     clearTimeout(zoomHideTimer);
     zoomHideTimer = setTimeout(() => zoomIndicator.classList.remove('show'), 1500);
+  }
+
+  // Pinch bittikten sonra hardware zoom uygula — net görüntü için
+  async function commitHardwareZoom() {
+    if (!hwZoomSupported || !videoTrack) return;
+    const minZ = trackCaps.zoom?.min ?? 1;
+    const maxZ = trackCaps.zoom?.max ?? currentZoom;
+    const target = Math.max(minZ, Math.min(maxZ, currentZoom));
+
+    try {
+      await videoTrack.applyConstraints({ advanced: [{ zoom: target }] });
+      appliedHwZoom = target;
+      // Hardware zoom devralınca CSS scale pürüzsüzce 1'e indir
+      video.style.transition = 'transform 0.18s ease-out';
+      video.style.transform  = `scale(${currentZoom / appliedHwZoom})`;
+      setTimeout(() => { video.style.transition = ''; }, 220);
+    } catch (_) { /* desteklenmiyor, CSS scale kalır */ }
   }
 
   // ── Pinch-to-zoom ─────────────────────────────────────────────
@@ -282,6 +303,7 @@
     if (e.touches.length < 2) {
       pinchActive = false;
       pinchDist0  = null;
+      commitHardwareZoom();
     }
   }, { passive: true });
 
@@ -301,15 +323,16 @@
     video.srcObject = stream;
     videoTrack = stream.getVideoTracks()[0];
 
-    const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+    trackCaps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
 
     const adv = {};
-    if (caps.focusMode?.includes('continuous'))        adv.focusMode        = 'continuous';
-    if (caps.exposureMode?.includes('continuous'))     adv.exposureMode     = 'continuous';
-    if (caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
+    if (trackCaps.focusMode?.includes('continuous'))        adv.focusMode        = 'continuous';
+    if (trackCaps.exposureMode?.includes('continuous'))     adv.exposureMode     = 'continuous';
+    if (trackCaps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
     if (Object.keys(adv).length) videoTrack.applyConstraints({ advanced: [adv] }).catch(() => {});
 
-    if (caps.torch) torchBtn.style.display = 'flex';
+    if (trackCaps.zoom)  hwZoomSupported = true;
+    if (trackCaps.torch) torchBtn.style.display = 'flex';
 
     return video.play();
   })
